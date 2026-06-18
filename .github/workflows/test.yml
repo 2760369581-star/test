@@ -1,0 +1,8 @@
+name: My First Runner Job
+on: push
+jobs:
+  my-job:
+    runs-on: self-hosted
+    steps:
+      - name: Print Message
+        run: echo "Runner is working! Hello from YURUYING!"
