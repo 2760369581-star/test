@@ -1,0 +1,10 @@
+name: test-arc
+on:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: k8s-runners
+    steps:
+      - run: echo hello from ARC
+      - run: uname -a
