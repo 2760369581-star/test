@@ -1,0 +1,92 @@
+# 将 GitHub / ghcr.io / Docker Hub 等镜像同步到阿里云 ACR，供 ACK 集群拉取
+#
+# 使用前在仓库 Settings → Secrets and variables → Actions 配置：
+#   ACR_REGISTRY   例：registry.cn-shanghai.aliyuncs.com
+#   ACR_NAMESPACE  例：your-namespace
+#   ACR_USERNAME   ACR 登录用户名
+#   ACR_PASSWORD   ACR 固定密码
+#
+# 手动触发时可指定镜像；push 到 main 时同步下方默认列表
+
+name: Mirror Image to ACR
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_image:
+        description: "源镜像（含 tag），例 ghcr.io/actions/actions-runner:latest"
+        required: true
+        default: "ghcr.io/actions/actions-runner:latest"
+      target_name:
+        description: "ACR 内镜像名（不含 registry/namespace），例 actions-runner"
+        required: true
+        default: "actions-runner"
+      target_tag:
+        description: "ACR 内 tag"
+        required: true
+        default: "latest"
+
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mirror-image-to-acr.yaml"
+
+env:
+  CRANE_VERSION: "0.20.3"
+
+jobs:
+  mirror:
+    runs-on: arc-runner-set
+    steps:
+      - name: Install crane (无需 Docker 守护进程)
+        run: |
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xzf - crane
+          sudo mv crane /usr/local/bin/
+          crane version
+
+      - name: Login ACR
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "$ACR_PASSWORD" | crane auth login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+
+      - name: Mirror single image (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          SOURCE: ${{ github.event.inputs.source_image }}
+          TARGET_NAME: ${{ github.event.inputs.target_name }}
+          TARGET_TAG: ${{ github.event.inputs.target_tag }}
+        run: |
+          TARGET="${ACR_REGISTRY}/${ACR_NAMESPACE}/${TARGET_NAME}:${TARGET_TAG}"
+          echo "Copy: $SOURCE -> $TARGET"
+          crane copy "$SOURCE" "$TARGET"
+          echo "Done: $TARGET"
+
+      - name: Mirror default images (push to main)
+        if: github.event_name == 'push'
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+        run: |
+          mirror() {
+            local src="$1" name="$2" tag="$3"
+            local dst="${ACR_REGISTRY}/${ACR_NAMESPACE}/${name}:${tag}"
+            echo "=== $src -> $dst ==="
+            crane copy "$src" "$dst"
+          }
+          # ARC 常用镜像（可按需增删）
+          mirror "ghcr.io/actions/actions-runner:latest"           "actions-runner"                    "latest"
+          mirror "ghcr.io/actions/gha-runner-scale-set-controller:0.14.2" "gha-runner-scale-set-controller" "0.14.2"
+
+      - name: Summary
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+        run: |
+          echo "ACK 拉取地址示例："
+          echo "  ${ACR_REGISTRY}/${ACR_NAMESPACE}/<镜像名>:<tag>"

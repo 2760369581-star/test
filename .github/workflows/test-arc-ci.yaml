@@ -1,0 +1,29 @@
+# 在 ACK ARC 自托管 Runner 上跑的基础 CI 测试
+name: Test ARC CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  ci:
+    runs-on: arc-runner-set
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show runner info
+        run: |
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          uname -a
+          git --version
+
+      - name: Lint / sanity check
+        run: |
+          echo "CI pipeline is working on ACK ARC"
+          test -d .git
+
+      - name: Done
+        run: echo "✓ ARC CI passed"
