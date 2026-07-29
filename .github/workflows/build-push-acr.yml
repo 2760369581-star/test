@@ -1,0 +1,68 @@
+# 在 arc-runner-set（KubeVirt 临时 VM）上构建并推送到阿里云 ACR
+#
+# 仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   ACR_REGISTRY  = crpi-n6v51usidnbvjleb.cn-shanghai.personal.cr.aliyuncs.com
+#   ACR_NAMESPACE = yry_github
+#   ACR_USERNAME  = nick3310103194
+#   ACR_PASSWORD  = 访问凭证里的密码（不要写进仓库）
+
+name: Build and Push to ACR
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "app/**"
+      - ".github/workflows/build-push-acr.yml"
+
+jobs:
+  build-and-push:
+    runs-on: arc-runner-set
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image name
+        id: meta
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+        run: |
+          set -euxo pipefail
+          IMAGE_REPO="${ACR_REGISTRY}/${ACR_NAMESPACE}/test"
+          TAG="${GITHUB_SHA::8}"
+          echo "image=${IMAGE_REPO}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${IMAGE_REPO}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Login ACR
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" \
+            -u "$ACR_USERNAME" \
+            --password-stdin
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          docker build \
+            -t "${{ steps.meta.outputs.image }}" \
+            -t "${{ steps.meta.outputs.image_latest }}" \
+            .
+
+      - name: Push
+        run: |
+          set -euxo pipefail
+          docker push "${{ steps.meta.outputs.image }}"
+          docker push "${{ steps.meta.outputs.image_latest }}"
+
+      - name: Summary
+        run: |
+          echo "Pushed:"
+          echo "  ${{ steps.meta.outputs.image }}"
+          echo "  ${{ steps.meta.outputs.image_latest }}"
